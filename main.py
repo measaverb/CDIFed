@@ -42,7 +42,7 @@ def parse_args():
         "--prefix",
         type=str,
         default="",
-        metavar="PFX",
+        metavar="cdifed_init",
         help="dataset prefix for logging & checkpoint saving",
     )
     parser.add_argument(
@@ -54,7 +54,7 @@ def parse_args():
     parser.add_argument(
         "--local_epoch",
         type=int,
-        default=5,
+        default=20,
         help="Local epochs for local model updating.",
     )
     parser.add_argument(
@@ -91,7 +91,7 @@ def parse_args():
         "--lr_clip", type=float, default=0.002, help="Learning rate for clipping."
     )
     parser.add_argument(
-        "--epochs_clip", type=int, default=15, help="Number of epochs for clipping."
+        "--epochs_clip", type=int, default=20, help="Number of epochs for clipping."
     )
     ### CDIFED RELATED END ###
     parser.add_argument(

@@ -112,10 +112,19 @@ class ImageFolder_Custom(DatasetFolder):
                 self.transform,
                 self.target_transform,
             )
-        self.classnames = [
-            self.imagefolder_obj.classes[i]
-            for i in range(len(self.imagefolder_obj.classes))
+        self.classes = [
+            "0 - zero",
+            "1 - one",
+            "2 - two",
+            "3 - three",
+            "4 - four",
+            "5 - five",
+            "6 - six",
+            "7 - seven",
+            "8 - eight",
+            "9 - nine",
         ]
+
 
     def __getitem__(self, index):
         path = self.samples[index][0]
@@ -139,9 +148,9 @@ class FedLeaDigits(FederatedDataset):
     N_CLASS = 10
     Nor_TRANSFORM = transforms.Compose(
         [
-            transforms.Resize((32, 32)),
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
+            transforms.Resize((224, 224)),
+            # transforms.RandomCrop(224, padding=4),
+            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
         ]
@@ -149,9 +158,9 @@ class FedLeaDigits(FederatedDataset):
 
     Singel_Channel_Nor_TRANSFORM = transforms.Compose(
         [
-            transforms.Resize((32, 32)),
-            transforms.RandomCrop(32, padding=4),
-            transforms.RandomHorizontalFlip(),
+            transforms.Resize((224, 224)),
+            # transforms.RandomCrop(224, padding=4),
+            # transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
             transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
@@ -172,7 +181,7 @@ class FedLeaDigits(FederatedDataset):
 
         test_transform = transforms.Compose(
             [
-                transforms.Resize((32, 32)),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 self.get_normalization_transform(),
             ]
@@ -180,7 +189,7 @@ class FedLeaDigits(FederatedDataset):
 
         sin_chan_test_transform = transforms.Compose(
             [
-                transforms.Resize((32, 32)),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Lambda(lambda x: x.repeat(3, 1, 1)),
                 self.get_normalization_transform(),
