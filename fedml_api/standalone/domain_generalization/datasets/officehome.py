@@ -41,13 +41,13 @@ class ImageFolder_Custom(DatasetFolder):
         self.target_transform = target_transform
         if train:
             self.imagefolder_obj = ImageFolder(
-                self.root + "Office_Caltech_10/" + self.data_name + "/",
+                self.root + "OfficeHome/train/" + self.data_name + "/",
                 self.transform,
                 self.target_transform,
             )
         else:
             self.imagefolder_obj = ImageFolder(
-                self.root + "Office_Caltech_10/" + self.data_name + "/",
+                self.root + "OfficeHome/test/" + self.data_name + "/",
                 self.transform,
                 self.target_transform,
             )
@@ -90,13 +90,13 @@ class ImageFolder_Custom(DatasetFolder):
 
 
 class FedLeaOfficeCaltech(FederatedDataset):
-    NAME = "fl_officecaltech"
+    NAME = "fl_officehome"
     SETTING = "domain_skew"
-    DOMAINS_LIST = ["caltech", "amazon", "webcam", "dslr"]
-    percent_dict = {"caltech": 0.2, "amazon": 0.2, "webcam": 0.2, "dslr": 0.2}
+    DOMAINS_LIST = ["Art", "Clipart", "Product", "Real_World"]
+    percent_dict = {"Art": 0.2, "Clipart": 0.2, "Product": 0.2, "Real_World": 0.2}
 
     N_SAMPLES_PER_Class = None
-    N_CLASS = 10
+    N_CLASS = 65
     Nor_TRANSFORM = transforms.Compose(
         [
             transforms.Resize((256, 256)),

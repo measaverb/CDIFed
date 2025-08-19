@@ -1,3 +1,5 @@
+import os
+
 import torchvision.transforms as transforms
 from torchvision.datasets import DatasetFolder, ImageFolder
 
@@ -11,14 +13,14 @@ from fedml_api.standalone.domain_generalization.backbone.ResNet import (
     resnet12,
     resnet18,
     resnet34,
-    resnet50
+    resnet50,
 )
 from fedml_api.standalone.domain_generalization.datasets.transforms.denormalization import (
     DeNormalize,
 )
 from fedml_api.standalone.domain_generalization.datasets.utils.federated_dataset import (
     FederatedDataset,
-    partition_office_domain_skew_loaders_new,
+    partition_domainnet_domain_skew_loaders_new,
 )
 from fedml_api.standalone.domain_generalization.utils.conf import data_path
 
@@ -41,13 +43,13 @@ class ImageFolder_Custom(DatasetFolder):
         self.target_transform = target_transform
         if train:
             self.imagefolder_obj = ImageFolder(
-                self.root + "Office_Caltech_10/" + self.data_name + "/",
+                self.root + "/" + self.data_name + "/",
                 self.transform,
                 self.target_transform,
             )
         else:
             self.imagefolder_obj = ImageFolder(
-                self.root + "Office_Caltech_10/" + self.data_name + "/",
+                self.root + "/" + self.data_name + "/",
                 self.transform,
                 self.target_transform,
             )
@@ -89,14 +91,21 @@ class ImageFolder_Custom(DatasetFolder):
         return img, target
 
 
-class FedLeaOfficeCaltech(FederatedDataset):
-    NAME = "fl_officecaltech"
+class FedLeaDomainNet(FederatedDataset):
+    NAME = "fl_domainnet"
     SETTING = "domain_skew"
-    DOMAINS_LIST = ["caltech", "amazon", "webcam", "dslr"]
-    percent_dict = {"caltech": 0.2, "amazon": 0.2, "webcam": 0.2, "dslr": 0.2}
+    DOMAINS_LIST = ["clipart", "infograph", "painting", "quickdraw", "real", "sketch"]
+    percent_dict = {
+        "clipart": 0.1,
+        "infograph": 0.1,
+        "painting": 0.1,
+        "quickdraw": 0.1,
+        "real": 0.1,
+        "sketch": 0.1,
+    }
 
     N_SAMPLES_PER_Class = None
-    N_CLASS = 10
+    N_CLASS = 345
     Nor_TRANSFORM = transforms.Compose(
         [
             transforms.Resize((256, 256)),
@@ -126,7 +135,10 @@ class FedLeaOfficeCaltech(FederatedDataset):
 
         for _, domain in enumerate(using_list):
             train_dataset = ImageFolder_Custom(
-                data_name=domain, root=data_path(), train=True, transform=nor_transform
+                data_name=domain,
+                root=os.path.join(data_path(), "DomainNet", "train"),
+                train=True,
+                transform=nor_transform,
             )
 
             train_dataset_list.append(train_dataset)
@@ -134,13 +146,13 @@ class FedLeaOfficeCaltech(FederatedDataset):
         for _, domain in enumerate(self.DOMAINS_LIST):
             test_dataset = ImageFolder_Custom(
                 data_name=domain,
-                root=data_path(),
+                root=os.path.join(data_path(), "DomainNet", "test"),
                 train=False,
                 transform=test_transform,
             )
             test_dataset_list.append(test_dataset)
 
-        traindls, testdls = partition_office_domain_skew_loaders_new(
+        traindls, testdls = partition_domainnet_domain_skew_loaders_new(
             train_dataset_list, test_dataset_list, self
         )
         return traindls, testdls
@@ -148,7 +160,7 @@ class FedLeaOfficeCaltech(FederatedDataset):
     @staticmethod
     def get_transform():
         transform = transforms.Compose(
-            [transforms.ToPILImage(), FedLeaOfficeCaltech.Nor_TRANSFORM]
+            [transforms.ToPILImage(), FedLeaDomainNet.Nor_TRANSFORM]
         )
         return transform
 
@@ -170,12 +182,12 @@ class FedLeaOfficeCaltech(FederatedDataset):
         if names_list == None:
             for j in range(parti_num):
                 # nets_list.append(resnet10(FedLeaOfficeCaltech.N_CLASS))
-                nets_list.append(resnet18(FedLeaOfficeCaltech.N_CLASS))
+                nets_list.append(resnet18(FedLeaDomainNet.N_CLASS))
         else:
             for j in range(parti_num):
                 # net_name = names_list[j]
                 net_name = names_list
-                nets_list.append(nets_dict[net_name](FedLeaOfficeCaltech.N_CLASS))
+                nets_list.append(nets_dict[net_name](FedLeaDomainNet.N_CLASS))
         return nets_list
 
     @staticmethod

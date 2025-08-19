@@ -5,9 +5,9 @@ from typing import Tuple
 
 import numpy as np
 import torch
-import wandb
 from torch.utils.data import DataLoader
 
+import wandb
 from fedml_api.standalone.domain_generalization.datasets.utils.federated_dataset import (
     FederatedDataset,
 )
@@ -107,6 +107,22 @@ def train(
                 selected_domain_list = list(selected_domain_list) + domains_list
             elif model.args.dataset == "fl_digits":
                 # selected_domain_list = np.random.choice(domains_list, size=args.parti_num, replace=True, p=None)
+                selected_domain_list = np.random.choice(
+                    domains_list,
+                    size=args.parti_num - domains_len,
+                    replace=True,
+                    p=None,
+                )
+                selected_domain_list = list(selected_domain_list) + domains_list
+            elif model.args.dataset == "fl_domainnet":
+                selected_domain_list = np.random.choice(
+                    domains_list,
+                    size=args.parti_num - domains_len,
+                    replace=True,
+                    p=None,
+                )
+                selected_domain_list = list(selected_domain_list) + domains_list
+            elif model.args.dataset == "fl_officehome":
                 selected_domain_list = np.random.choice(
                     domains_list,
                     size=args.parti_num - domains_len,

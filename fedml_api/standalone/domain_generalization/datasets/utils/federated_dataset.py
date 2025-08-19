@@ -283,6 +283,94 @@ def partition_office_domain_skew_loaders_new(
     return setting.train_loaders, setting.test_loader
 
 
+def partition_domainnet_domain_skew_loaders_new(
+    train_datasets: list, test_datasets: list, setting: FederatedDataset
+) -> Tuple[list, list]:
+    ini_len_dict = {}
+    not_used_index_dict = {}
+    all_labels_list = []
+    for i in range(len(train_datasets)):
+        name = train_datasets[i].data_name
+        all_train_index = np.array(train_datasets[i].train_index_list)
+        if name not in not_used_index_dict:
+            not_used_index_dict[name] = np.arange(len(all_train_index))
+            ini_len_dict[name] = len(all_train_index)
+
+        all_labels_list.append(
+            np.unique(
+                np.array(train_datasets[i].imagefolder_obj.targets)[all_train_index]
+            )
+        )
+
+    print(all_labels_list)
+    all_labels_array = np.array(all_labels_list)
+
+    for index in range(len(test_datasets)):
+        test_dataset = test_datasets[index]
+        test_loader = DataLoader(test_dataset, batch_size=setting.args.local_batch_size)
+        setting.test_loader.append(test_loader)
+
+    for index in range(len(train_datasets)):
+        name = train_datasets[index].data_name
+
+        train_dataset = train_datasets[index]
+
+        idxs = np.random.permutation(not_used_index_dict[name])
+        percent = setting.percent_dict[name]
+        selected_idx = idxs[0 : int(percent * ini_len_dict[name])]
+
+        all_train_index = np.array(train_datasets[index].train_index_list)
+        train_labels = np.array(train_datasets[index].imagefolder_obj.targets)[
+            all_train_index
+        ]
+        selected_labels = train_labels[selected_idx]
+
+        show_up_num = np.zeros(len(all_labels_array[index]))
+        for i in range(len(selected_labels)):
+            label = selected_labels[i]
+            show_up_num[label] += 1
+
+        not_used_labels = np.where(show_up_num == 0)[0]
+        for i in range(len(not_used_labels)):
+            not_used_label = not_used_labels[i]
+            not_used_label_idx = np.where(train_labels == not_used_label)[0]
+            add_index = not_used_label_idx[np.random.randint(len(not_used_label_idx))]
+
+            used_label = train_labels[selected_idx]
+            prob_del_place = np.where(show_up_num >= 2)[0]
+            del_index = np.random.randint(len(prob_del_place))
+            del_label = prob_del_place[del_index]
+
+            prob_del_selected = np.where(used_label == del_label)[0]
+            del_index_selected = prob_del_selected[
+                np.random.randint(len(prob_del_selected))
+            ]
+            selected_idx = selected_idx[
+                selected_idx != selected_idx[del_index_selected]
+            ]
+            selected_idx = np.append(selected_idx, add_index)
+
+            show_up_num[del_label] -= 1
+            show_up_num[not_used_label] += 1
+
+        not_select_index = np.array(idxs)
+        for i in range(len(selected_idx)):
+            not_select_index = not_select_index[not_select_index != selected_idx[i]]
+
+        not_used_index_dict[name] = not_select_index
+
+        train_sampler = SubsetRandomSampler(selected_idx)
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=setting.args.local_batch_size,
+            sampler=train_sampler,
+        )
+        setting.train_loaders.append(train_loader)
+
+    return setting.train_loaders, setting.test_loader
+
+
 def partition_office_domain_skew_loaders(
     train_datasets: list, test_datasets: list, setting: FederatedDataset
 ) -> Tuple[list, list]:

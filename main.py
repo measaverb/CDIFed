@@ -10,8 +10,8 @@ from argparse import ArgumentParser
 import setproctitle
 import torch
 import torch.multiprocessing
-import wandb
 
+import wandb
 from fedml_api.standalone.domain_generalization.datasets import (
     Priv_NAMES as DATASET_NAMES,
 )
@@ -70,7 +70,7 @@ def parse_args():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="fl_officecaltech",  # fl_officecaltech fl_digits
+        default="fl_officecaltech",  # fl_officecaltech fl_digits fl_domainnet
         choices=DATASET_NAMES,
         help="Datasets used in the experiment.",
     )
@@ -91,7 +91,28 @@ def parse_args():
         "--lr_clip", type=float, default=0.002, help="Learning rate for clipping."
     )
     parser.add_argument(
-        "--epochs_clip", type=int, default=20, help="Number of epochs for clipping."
+        "--adapter_epochs",
+        type=int,
+        default=10,
+        help="Number of epochs for adapter training.",
+    )
+    parser.add_argument(
+        "--lr_student",
+        type=float,
+        default=1e-4,
+        help="Learning rate for student model",
+    )
+    parser.add_argument(
+        "--distill_lambda",
+        type=float,
+        default=1.0,
+        help="Distillation loss weight",
+    )
+    parser.add_argument(
+        "--save_dir",
+        type=str,
+        default="checkpoints",
+        help="Directory to save model checkpoints",
     )
     ### CDIFED RELATED END ###
     parser.add_argument(

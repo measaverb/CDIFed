@@ -180,3 +180,9 @@ wandb/
 settings.json
 clips/
 .trunk/
+quickdraw.zip
+real.zip
+sketch.zip
+
+csv_logs/
+checkpoints/

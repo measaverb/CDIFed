@@ -31,7 +31,7 @@ class CsvWriter:
 
     def _model_folder_path(self):
         args = self.args
-        data_path = base_path() + args.dataset
+        data_path = "csv_logs/" + args.dataset
         create_if_not_exists(data_path)
 
         model_path = data_path + "/" + args.model
