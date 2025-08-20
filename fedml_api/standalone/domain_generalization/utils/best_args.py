@@ -13,6 +13,14 @@ best_args = {
             "local_lr": 0.01,
             "local_batch_size": 64,
         },
+        "cdifedresnet": {
+            "local_lr": 0.01,
+            "local_batch_size": 64,
+        },
+        "cdifedclassifier": {
+            "local_lr": 0.01,
+            "local_batch_size": 64,
+        },
         "fedsr": {
             "local_lr": 0.01,
             "local_batch_size": 64,
@@ -55,6 +63,14 @@ best_args = {
             "pr_ratios": ["0", "0.2", "0.4", "0.6", "0.8"],
         },
         "cdifed": {
+            "local_lr": 0.01,
+            "local_batch_size": 64,
+        },
+        "cdifedresnet": {
+            "local_lr": 0.01,
+            "local_batch_size": 64,
+        },
+        "cdifedclassifier": {
             "local_lr": 0.01,
             "local_batch_size": 64,
         },
