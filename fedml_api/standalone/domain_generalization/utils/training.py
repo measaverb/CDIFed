@@ -3,8 +3,11 @@ from argparse import Namespace
 from collections import Counter
 from typing import Tuple
 
+import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 import torch
+from matplotlib.lines import Line2D
 from torch.utils.data import DataLoader
 
 import wandb
@@ -43,6 +46,164 @@ def global_evaluate(
         accs.append(top1acc)
     net.train(status)
     return accs
+
+
+def visualise_tsne_features(
+    model,
+    test_dls: list,
+    device: torch.device,
+    title: str = "t-SNE Visualisation of Features by Domain",
+):
+    """
+    Extracts features from a model for different domains, performs t-SNE using
+    RAPIDS cuML, and visualizes the result.
+
+    Args:
+        model (FederatedModel): The federated model containing the global_net.
+                                The global_net must have a `.features()` method.
+        test_dls (list): A list of PyTorch DataLoaders, each for a different domain.
+        device (torch.device): The device to run the model on (e.g., 'cuda:0').
+        title (str): The title for the plot.
+    """
+    try:
+        import cupy
+        from cuml.manifold import TSNE
+    except ImportError:
+        print(
+            "RAPIDS cuML and CuPy are not installed. Please install them to use this function."
+        )
+        print("See: https://rapids.ai/start.html")
+        return
+
+    print("Starting feature extraction...")
+    all_features = []
+    all_labels = []
+    all_domains = []
+
+    net = model.global_net
+    status = net.training
+    net.eval()  # Set the model to evaluation mode
+
+    with torch.no_grad():
+        for domain_id, dl in enumerate(test_dls):
+            print(f"  - Processing Domain {domain_id+1}/{len(test_dls)}")
+            for images, labels in dl:
+                images = images.to(device)
+                # Use the .features() method to get the feature representation
+                features = net.features(images)
+
+                all_features.append(features.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
+                # Create an array of domain IDs for this batch
+                domain_ids = np.full(labels.shape[0], domain_id)
+                all_domains.append(domain_ids)
+
+    net.train(status)  # Restore the model's original training status
+
+    # Concatenate all batch results into single numpy arrays
+    all_features = np.concatenate(all_features, axis=0)
+    all_labels = np.concatenate(all_labels, axis=0)
+    all_domains = np.concatenate(all_domains, axis=0)
+
+    print(f"\nFeature extraction complete. Total samples: {all_features.shape[0]}")
+    print("Running t-SNE on GPU with cuML...")
+
+    features_gpu = cupy.asarray(all_features)
+
+    tsne = TSNE(n_components=2, perplexity=50, n_iter=10000, random_state=42)
+    tsne_results_gpu = tsne.fit_transform(features_gpu)
+
+    tsne_results = tsne_results_gpu.get()
+
+    print("t-SNE complete. Plotting results...")
+
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, ax = plt.subplots(figsize=(16, 12))
+
+    unique_domains = np.unique(all_domains)
+    unique_classes = np.unique(all_labels)
+    num_domains = len(unique_domains)
+
+    # Define palettes and markers with swapped logic
+    class_palette = sns.color_palette("tab10", n_colors=len(unique_classes))
+    domain_markers = ["o", "s", "X", "^", "P", "D", "*", "v", "<", ">"]
+
+    if num_domains > len(domain_markers):
+        print(
+            f"Warning: Number of domains ({num_domains}) is greater than the number of unique markers "
+            f"({len(domain_markers)}). Markers will be reused."
+        )
+
+    # Plot each domain-class combination
+    for domain_idx, domain_id in enumerate(unique_domains):
+        for class_idx, class_id in enumerate(unique_classes):
+            mask = (all_domains == domain_id) & (all_labels == class_id)
+            if not np.any(mask):
+                continue
+
+            # Assign color by class and marker by domain
+            color = class_palette[class_idx % len(class_palette)]
+            marker = domain_markers[domain_idx % len(domain_markers)]
+
+            ax.scatter(
+                tsne_results[mask, 0],
+                tsne_results[mask, 1],
+                color=color,
+                marker=marker,
+                alpha=0.8,
+                s=80,
+                edgecolor="k",
+                linewidth=0.5,
+            )
+
+    # --- Create Custom Legends (with swapped logic) ---
+    # 1. Legend for Classes (Colors)
+    # class_handles = [
+    #     Line2D(
+    #         [0],
+    #         [0],
+    #         marker="o",
+    #         color="w",
+    #         label=f"Class {c}",
+    #         markerfacecolor=color,
+    #         markersize=10,
+    #     )
+    #     for c, color in zip(unique_classes, class_palette)
+    # ]
+    # legend1 = ax.legend(
+    #     handles=class_handles,
+    #     title="Classes",
+    #     loc="upper left",
+    #     bbox_to_anchor=(1.02, 1),
+    # )
+    # ax.add_artist(legend1)
+
+    # 2. Legend for Domains (Markers)
+    # domain_handles = [
+    #     Line2D(
+    #         [0],
+    #         [0],
+    #         marker=domain_markers[i % len(domain_markers)],
+    #         color="gray",
+    #         linestyle="None",
+    #         label=f"Domain {d}",
+    #         markersize=10,
+    #     )
+    #     for i, d in enumerate(unique_domains)
+    # ]
+    # ax.legend(
+    #     handles=domain_handles,
+    #     title="Domains",
+    #     loc="lower left",
+    #     bbox_to_anchor=(1.02, 0),
+    # )
+
+    # ax.set_title(title, fontsize=20)
+    # ax.set_xlabel("t-SNE Dimension 1", fontsize=14)
+    # ax.set_ylabel("t-SNE Dimension 2", fontsize=14)
+
+    plt.tight_layout(rect=[0, 0, 0.85, 1])
+    plt.savefig("tsne_visualisation.png")
 
 
 def local_evaluate(
@@ -166,13 +327,6 @@ def train(
     mean_accs_list = []
     best_acc = 0
     best_accs = []
-
-    model.load_global_net(
-        path="/home/measaverb/workspaces/CDIFed/checkpoints/global/latest_global.pth"
-    )
-    accs = global_evaluate(
-        model, test_loaders, private_dataset.SETTING, private_dataset.NAME
-    )
 
     Epoch = args.communication_epoch
     for epoch_index in range(Epoch):

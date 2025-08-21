@@ -70,8 +70,9 @@ class FederatedModel(nn.Module):
         pass
 
     def load_global_net(self, path):
-        self.global_net.load_state_dict(torch.load(PATH, weights_only=True))
-
+        self.global_net.load_state_dict(
+            torch.load(path, weights_only=True), strict=True
+        )
 
     def load_pretrained_nets(self):
         if self.load:
