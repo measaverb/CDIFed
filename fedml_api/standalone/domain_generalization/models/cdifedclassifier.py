@@ -7,7 +7,6 @@ import torch.nn as nn
 from torch.optim import Adam
 from tqdm import tqdm
 
-# --- Assuming these imports are correctly set up in the user's environment ---
 from fedml_api.standalone.domain_generalization.models.utils.clip_adapter import (
     CustomCLIP,
     create_clip_cfg,
@@ -18,23 +17,22 @@ from fedml_api.standalone.domain_generalization.models.utils.federated_model imp
 )
 
 
-# MODIFICATION: Renamed class from CDIFedResNet to CDIFedClassifier
 class CDIFedClassifier(FederatedModel):
-    # MODIFICATION: Updated NAME attribute
     NAME = "cdifedclassifier"
 
     def __init__(self, nets_list, args, transform):
-        # nets_list is now expected to be a list of single-layer classifiers (e.g., nn.Linear)
         super(CDIFedClassifier, self).__init__(nets_list, args, transform)
 
         self.args.adapter_epochs = getattr(self.args, "adapter_epochs", 3)
-        # MODIFICATION: Renamed distill_epochs to local_epochs for clarity, as there is no distillation
-        self.args.local_epochs = getattr(
+        # <<< START OF MODIFICATION: RENAME EPOCH ARGUMENT FOR CLARITY >>>
+        # The second phase is now for classifier training, not distillation.
+        self.args.classifier_epochs = getattr(
             self.args, "distill_epochs", self.args.local_epoch
         )
+        # <<< END OF MODIFICATION >>>
         self.args.lr_student = getattr(self.args, "lr_student", 1e-4)
-        # MODIFICATION: Removed distill_lambda as it's no longer needed
-        # self.args.distill_lambda = getattr(self.args, "distill_lambda", 1.0)
+        # distill_lambda is no longer used, but kept for config compatibility
+        self.args.distill_lambda = getattr(self.args, "distill_lambda", 1.0)
 
         self.save_dir = getattr(self.args, "save_dir", "checkpoints")
         self.best_acc = 0.0
@@ -59,7 +57,6 @@ class CDIFedClassifier(FederatedModel):
             )
 
     def ini(self):
-        # MODIFICATION: self.global_net is now the global classifier
         self.global_net = copy.deepcopy(self.nets_list[0])
         global_w = self.nets_list[0].state_dict()
         for _, net in enumerate(self.nets_list):
@@ -67,8 +64,41 @@ class CDIFedClassifier(FederatedModel):
 
         self.base_clip_model = None
         self.tuned_adapters = {}
-        # MODIFICATION: Projectors are client-specific and not aggregated
         self.projectors = nn.ModuleDict()
+
+    # <<< START OF MODIFICATION: ADDED AGGREGATION METHOD FOR CLASSIFIERS >>>
+    def _aggregate_classifiers(self):
+        """
+        Aggregates the classifier weights from online clients and distributes
+        the new global classifier back to all clients.
+        """
+        print("\nAggregating client classifiers...")
+        # Assuming self.global_net.cls and client_net.cls exist and are the classifiers
+        global_cls_dict = self.global_net.cls.state_dict()
+
+        # Zero out the global classifier's state dict for accumulation
+        for k in global_cls_dict.keys():
+            global_cls_dict[k] = torch.zeros_like(global_cls_dict[k])
+
+        # Sum the state dicts of all online clients' classifiers
+        for i in self.online_clients:
+            client_cls_dict = self.nets_list[i].cls.state_dict()
+            for k in global_cls_dict.keys():
+                global_cls_dict[k] += client_cls_dict[k]
+
+        # Average the accumulated state dicts
+        for k in global_cls_dict.keys():
+            global_cls_dict[k] = torch.div(global_cls_dict[k], len(self.online_clients))
+
+        # Load the averaged classifier into the global model
+        self.global_net.cls.load_state_dict(global_cls_dict)
+        print("Global classifier has been updated with the average of online clients.")
+
+        # Distribute the new global classifier to all clients for the next round
+        for net in self.nets_list:
+            net.cls.load_state_dict(self.global_net.cls.state_dict())
+        print("Distributed the new global classifier to all local clients.")
+    # <<< END OF MODIFICATION >>>
 
     def loc_update(self, priloader_list):
         total_clients = list(range(self.args.parti_num))
@@ -78,61 +108,28 @@ class CDIFedClassifier(FederatedModel):
         self.online_clients = online_clients
 
         for i in tqdm(online_clients, desc="Local Client Training", position=0):
-            # MODIFICATION: self.nets_list[i] is the classifier for client i
             self._train_net(i, self.nets_list[i], priloader_list[i])
-            # The saved checkpoint is for the local classifier
             self._save_checkpoint(
                 self.nets_list[i].state_dict(),
                 "local_clients",
                 f"client_{i}_latest.pth",
             )
 
-        self.aggregate_nets()
-        print("Saving latest global model (classifier)...")
+        # <<< START OF MODIFICATION: REPLACE AGGREGATION LOGIC >>>
+        # self.aggregate_nets(None) # Original: aggregates the entire network
+        self._aggregate_classifiers()  # New: aggregates the classifier only
+        # <<< END OF MODIFICATION >>>
+
+        print("Saving latest global model...")
         self._save_checkpoint(
             self.global_net.state_dict(), "global", "latest_global.pth"
         )
 
         return None
 
-    # MODIFICATION: Added explicit aggregation method for clarity
-    def aggregate_nets(self):
-        """
-        Performs federated averaging on the classifiers of online clients.
-        Projectors are not aggregated.
-        """
-        print("Aggregating classifier weights...")
-        global_w = self.global_net.state_dict()
-        
-        # Zero out the global weights
-        for key in global_w:
-            global_w[key].zero_()
-
-        online_classifiers = [self.nets_list[i] for i in self.online_clients]
-        
-        # Sum the weights of online client classifiers
-        for classifier in online_classifiers:
-            net_w = classifier.state_dict()
-            for key in global_w:
-                # Assuming equal weight for each client
-                global_w[key] += net_w[key]
-        
-        # Average the weights
-        for key in global_w:
-            global_w[key] /= len(self.online_clients)
-
-        # Load the new global weights into the global classifier
-        self.global_net.load_state_dict(global_w)
-
-        # Distribute the new global classifier to all clients for the next round
-        for net in self.nets_list:
-            net.load_state_dict(global_w)
-        print("Aggregation complete. Global classifier distributed to all clients.")
-
-    def _train_net(self, client_idx, classifier, train_loader):
+    def _train_net(self, client_idx, net, train_loader):
         # =================================================================================
-        # PHASE 1: ONE-TIME CLIP ADAPTER TUNING (Remains the same)
-        # The adapter personalizes the feature extractor for each client's domain.
+        # PHASE 1: ONE-TIME CLIP ADAPTER TUNING (UNCHANGED)
         # =================================================================================
         print(f"\n[Client {client_idx}] Starting training process...")
         try:
@@ -165,7 +162,7 @@ class CDIFedClassifier(FederatedModel):
             )
             loss_fn_adapter = nn.CrossEntropyLoss()
             for epoch in range(self.args.adapter_epochs):
-                avg_loss = 0
+                total_loss, total_count = 0.0, 0
                 loop = tqdm(
                     train_loader,
                     desc=f"Adapter Epoch {epoch+1}/{self.args.adapter_epochs}",
@@ -180,10 +177,13 @@ class CDIFedClassifier(FederatedModel):
                     logits = tuning_model(image)
                     loss = loss_fn_adapter(logits, label)
                     loss.backward()
-                    avg_loss += loss.item()
                     optimizer_adapter.step()
+
+                    total_loss += loss.item() * image.size(0)
+                    total_count += image.size(0)
                     loop.set_postfix(loss=loss.item())
-                print(f"[Client {client_idx}] Adapter training loss for epoch {epoch+1}: {avg_loss / len(loop)}")
+                avg_loss = total_loss / total_count if total_count > 0 else 0
+                print(f"[Client {client_idx}] Adapter training loss: {avg_loss:.4f}")
 
             self.tuned_adapters[client_idx] = copy.deepcopy(
                 tuning_model.adapter.state_dict()
@@ -192,35 +192,37 @@ class CDIFedClassifier(FederatedModel):
             del tuning_model, optimizer_adapter
             torch.cuda.empty_cache()
 
+        # <<< START OF MODIFICATION: PHASE 2 IS NOW TRAINING THE CLASSIFIER >>>
         # =================================================================================
-        # MODIFICATION: PHASE 2: PROJECTOR AND CLASSIFIER TRAINING
-        # The adapter is frozen. We train a local projector and a classifier that will be aggregated.
+        # PHASE 2: TRAIN PROJECTOR AND CLASSIFIER
         # =================================================================================
-        print(f"[Client {client_idx}] Starting Phase 2: Projector and Classifier Training...")
 
-        # Load the client's tuned adapter and freeze the entire teacher model
         client_adapter_state = self.tuned_adapters[client_idx]
         self.base_clip_model.adapter.load_state_dict(client_adapter_state)
-        self.base_clip_model.eval()
-        for param in self.base_clip_model.parameters():
-            param.requires_grad = False
+        self.base_clip_model.eval() # Teacher model (with adapter) is frozen
 
-        classifier.train()
+        print(f"[Client {client_idx}] Starting Phase 2: Projector and Classifier Training...")
+
+        # Freeze the student's backbone and ensure only the classifier is trainable
+        net.train()
+        for param in net.parameters():
+            param.requires_grad = False
+        for param in net.cls.parameters():
+            param.requires_grad = True
 
         str_client_idx = str(client_idx)
         if str_client_idx not in self.projectors:
             print(f"Initializing feature projector for client {client_idx}...")
             clip_feature_dim = self.base_clip_model.image_encoder_base.output_dim
-            # The projector maps from CLIP's feature dimension to the classifier's input dimension
-            classifier_in_features = classifier.in_features
+            student_feature_dim = net.cls.in_features
 
             projector = nn.Sequential(
                 nn.Linear(
-                    clip_feature_dim, (clip_feature_dim + classifier_in_features) // 2
+                    clip_feature_dim, (clip_feature_dim + student_feature_dim) // 2
                 ),
                 nn.ReLU(),
                 nn.Linear(
-                    (clip_feature_dim + classifier_in_features) // 2, classifier_in_features
+                    (clip_feature_dim + student_feature_dim) // 2, student_feature_dim
                 ),
             ).to(self.device)
             self.projectors[str_client_idx] = projector
@@ -228,19 +230,19 @@ class CDIFedClassifier(FederatedModel):
         projector = self.projectors[str_client_idx]
         projector.train()
 
-        # Optimizer now trains only the projector and the classifier
+        # Optimizer now only trains the projector and the classifier part of the student net
         optimizer = Adam(
-            itertools.chain(classifier.parameters(), projector.parameters()),
+            itertools.chain(net.cls.parameters(), projector.parameters()),
             lr=self.args.lr_student,
             weight_decay=0,
         )
 
         classification_loss_fn = nn.CrossEntropyLoss()
 
-        for epoch in range(self.args.local_epochs):
+        for epoch in range(self.args.classifier_epochs):
             loop = tqdm(
                 train_loader,
-                desc=f"Classifier Epoch {epoch+1}/{self.args.local_epochs}",
+                desc=f"Classifier Epoch {epoch+1}/{self.args.classifier_epochs}",
                 leave=False,
                 position=1,
             )
@@ -249,22 +251,24 @@ class CDIFedClassifier(FederatedModel):
 
                 optimizer.zero_grad()
 
-                # 1. Get frozen features from the adapted CLIP model
+                # 1. Get teacher features from the fine-tuned CLIP model
                 with torch.no_grad():
                     teacher_features = self.base_clip_model.encode_image(image)
 
-                # 2. Pass features through the trainable local projector
-                projected_features = projector(teacher_features.float())
-                
-                # 3. Get predictions from the trainable classifier
-                outputs = classifier(projected_features)
+                # 2. Project teacher features into the student's feature space
+                projected_teacher_features = projector(teacher_features.float())
+
+                # 3. Pass projected features through the student's classifier method
+                outputs = net.classifier(projected_teacher_features)
 
                 # 4. Calculate classification loss
-                loss = classification_loss_fn(outputs, label)
+                class_loss = classification_loss_fn(outputs, label)
 
-                loss.backward()
+                # The total loss is just the classification loss
+                total_loss = class_loss
+
+                total_loss.backward()
                 optimizer.step()
 
-                loop.set_postfix(
-                    cls_loss=loss.item()
-                )
+                loop.set_postfix(cls_loss=class_loss.item())
+        # <<< END OF MODIFICATION >>>

@@ -104,6 +104,7 @@ class CDIFed(FederatedModel):
             self.base_clip_model.to(self.device)
             self.base_clip_model.eval()
 
+        # if client_idx in self.tuned_adapters:
         if client_idx not in self.tuned_adapters:
             print(f"[Client {client_idx}] Performing one-time CLIP-Adapter tuning...")
 
@@ -151,12 +152,12 @@ class CDIFed(FederatedModel):
         # =================================================================================
         # PHASE 2: CLIP FEATURE DISTILLATION (using the tuned adapter)
         # =================================================================================
-        print(f"[Client {client_idx}] Starting Phase 2: Feature Distillation...")
 
         client_adapter_state = self.tuned_adapters[client_idx]
         self.base_clip_model.adapter.load_state_dict(client_adapter_state)
         self.base_clip_model.eval()
 
+        print(f"[Client {client_idx}] Starting Phase 2: Feature Distillation...")
         net.train()
 
         str_client_idx = str(client_idx)

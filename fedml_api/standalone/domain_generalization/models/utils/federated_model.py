@@ -69,6 +69,10 @@ class FederatedModel(nn.Module):
     def loc_update(self, priloader_list):
         pass
 
+    def load_global_net(self, path):
+        self.global_net.load_state_dict(torch.load(PATH, weights_only=True))
+
+
     def load_pretrained_nets(self):
         if self.load:
             for j in range(self.args.parti_num):

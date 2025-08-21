@@ -167,6 +167,13 @@ def train(
     best_acc = 0
     best_accs = []
 
+    model.load_global_net(
+        path="/home/measaverb/workspaces/CDIFed/checkpoints/global/latest_global.pth"
+    )
+    accs = global_evaluate(
+        model, test_loaders, private_dataset.SETTING, private_dataset.NAME
+    )
+
     Epoch = args.communication_epoch
     for epoch_index in range(Epoch):
         model.epoch_index = epoch_index
